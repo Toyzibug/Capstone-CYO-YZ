@@ -1,0 +1,505 @@
+---
+title: "Capstone CYO Project"
+author: "Yaping Zhang"
+date: "23 July 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message = TRUE)
+```
+
+
+## 1. Introduction
+
+For the Harvard's Data Science Capstone CYO Project, we will make an Analysis on a big dataset from open source. The target of this project is to learn how to work with big dataset in practice. For instance, how to explore the data and which existing machine learning algorithms to choose, etc.
+
+The Abalone dataset is chosen in this project to be analysed. The dataset is downloaded from UCI (University of California, Irvine) Machine Learning Repository and provided from Department of Primary Industry and Fisheries of Tasmania. The data includes physical characteristics of abalones, such as different sizes, weights and sex. We will use these information to predict the age. Why predict the age? The economic value of abalone is related with it. The age can be determined physically from abalones shell. The shell need to be drilled and stained and the rings on the shell can then be counted under a microscope. The number of rings plus 1.5 is the age. Therefore want to use machine learning method to predict the "Rings" here.
+
+In the report, we will first give a shot description of the dataset. Thereupon explain the project target in detail and the key steps to archive it. Secondly in the method chapter, we first explore and visualize the data, if necessary clean the data. As a result of this chapter, we can get insights and set up the modelling approach by choosing out appropriate algorithms and evaluate them. In the end, we presenting the results from the evaluation and determine the best model for this dataset. As a conclusion, we will describe the difficulties and limitation during the project, based on which we will conclude the further work. 
+
+
+### 1.1. Dataset description
+
+Let us first install the necessary packages for the project:
+```{r library, message=FALSE}
+###Loading libraries
+if(!require(tidyverse)) install.packages("tidyverse", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(DataExplorer)) install.packages("DataExplorer", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(GGally)) install.packages("GGgally", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(car)) install.packages("car", 
+                        repos = "http://cran.us.r-project.org")
+if(!require(gam)) install.packages("gam", 
+                        repos = "http://cran.us.r-project.org")
+```
+
+Then wrangle the dataset from the following link and see the structure of the dataset: 
+```{r data wrangle}
+#download and wrangle the dataset
+varnames<-c("Sex", "Length", "Diameter", "Height", "Whole weight", 
+            "Shucked weight", "Viscera weight", "Shell weight", "Rings")
+abalone <- read.csv(url(
+  "https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.data"),
+                 header = FALSE, col.names = varnames)
+#Data structure
+str(abalone)
+```
+As we can see there are 4177 observations with 9 variables.The variable "Rings" is the integer variable we have to predict, called as "output". The other 8 variables are "predictors", which can be separated in three types:
+
+a. Size. It includes three continuous variables(in millimeters): "Length", "Height" and "Diameter". 
+
+b. Weight. There are four continuous variables(in grams) included: 
+  "Whole weight" for the whole abalone, 
+  "Shucked weight" for the weight of meat,
+  "Viscera weight" for the gut weight after bleeding,
+  "Shell weight" for its weight after drying.
+We could already interprete some logical connections between the predictors.
+  
+c. Sex. The predictor called "Sex" and including three levels: F(female), I(Infant), M(male).
+
+Additionally, the ranges of the continuous variables were already scaled for usage. Based on the information above let us determine the target and key steps of the project in the following chapter. 
+
+
+### 1.2. Define the target
+
+Before we directly implement existing machine learning algorithms on the original dataset, we have to clean and explore the data, based on the insights choose suitable machine learning algorithms and evaluating them with the result to determine the best one. 
+
+In this chapter we will discuss how to choose the models and how to define the best model.
+
+Let us start with how to define the best model. We need to first have a look at the output variable "Rings":
+```{r Output Summary}
+#explore the output variable
+summary(abalone$Rings)
+histogram(abalone$Rings)
+#To check if there is output classes with small count
+abalone%>%group_by(Rings)%>%mutate(n=n())%>%filter(n()<5)%>%top_n(10)%>%select(Rings,n)
+```
+
+It is an integer variable with 29 classes with some of them have very little volume of samples. For classification outcomes we often use confusion matrix to calculate the accuracy, however with this amount of classes(more than five) the accuracy can be quite low and to implement classification algorithms the sampling for each class will not be enough. 
+
+To compromise the short-come, we can weather classify the 29 classes into 3 classes(eg., 1-5 as 1st class, 5-15 the second,16-29 as the third) or to consider it as regression problem and use the loss function to calculate the Root Mean Square Error (RMSE). For demonstration purpose we will choose the second solution here. Let us define the calculation:
+
+```{r RMSE}
+#evaluation of models
+RMSE <- function(true_Rings, pred){ sqrt(mean((true_Rings - pred)^2))}
+```
+
+As the next, which machine learning models we will use. The target of the project is clear, using labeled input variables to predict an output variable. It matches the supervised machine learning approach. As we mentioned before we choose regression models based on insights of the data and to avoid over-fitting, we will use cross validation for all the model to avoid over training. Therefore we also have to separate the data to train set and test set.
+
+### 1.3 Key steps
+
+All things considered, we conclude the key steps of the project:
+
+a. Data exploration and cleaning. This is an important part of the project to guarantee good result. We will have a deep look into the data, for instance, the distribution of the continuous variables, the correlation between the predictors.If necessary we may have to transform the data.
+
+b. Modelling. Using the different regression models to train on the train dataset. Predict on the test set.
+
+c. Resulting. List all the results and determine the best model with the lowest RMSE. 
+
+d. Conclusion. It is always essential for each project. In this chapter, we will summarize the project, explain its limitation and future work.
+
+We put the step a and b in the next chapter "Methods" to explain in detail.
+
+
+## 2. Methods
+
+In this chapter we will first clean and explore the data and based on the insights carry out the modelling. As there are 9 predictors, we will separately explore them based on their logical category. 
+
+### 2.1. Data cleaning
+
+We will first clean in general, which are missing or zero values. Then clean the predictor in each categories based on logic.
+
+### 2.1.1. Missing or zero values
+
+We could go through the data with following codes to detect any of those values:
+```{r Data Intro for Cleaning}
+# data cleaning: see any missing values
+plot_intro(abalone)
+## detect zero values and show the column with 0 values
+zeroColumn<-which(!!colSums(abalone==0))
+zeroColumn
+```
+We found out there is no missing values but 0s in column "Height". We have a further look into this predictor:
+```{r Zero Value in Height}
+#list observations with 0
+abalone%>%filter(Height==0)
+```
+
+Two observations have 0. The reason could be missing of data. Let us replace the 0s with median of "Height" values with the same rings:
+```{r Replace Zero value}
+# name our data abalone_cleaned for the future usage
+abalone_cleaned<-abalone
+
+#use the data table function to replace 0 with NA
+setDT(abalone_cleaned)[Height==0, Height := NA,]
+
+#replace the 0 with median value with the same rings
+abalone_cleaned[, Height := replace(Height, is.na(Height), median(Height, na.rm = TRUE)),
+                by = Rings]
+```
+The zero values are removed. We renamed our dataset to "abalone_cleaned".
+
+### 2.1.2. Size predictors
+
+In this chapter, we will explore the outlier using box plot, distribution using histogram. In addition, we will color the plots with sex to have an overview how this category of predictor influences.
+
+```{r Size boxplot}
+# detect if there are outliers from the three predictors
+boxplot(abalone_cleaned$Length,abalone_cleaned$Diameter,abalone_cleaned$Height,col = "Blue",
+        main="Box plot of Length, Diameter and Height")
+```
+We can visualize two outliers in "Height". Let us have a deeper look into "Height":
+```{r Plot Height vs Rings}
+#plot height ~ rings to detect outlier
+abalone_cleaned%>%ggplot(aes(Height,Rings,color=Sex))+geom_point()+
+  ggtitle("Plot of Height by Rings")
+```
+
+We can see the height value are positively related to rings. The infant abalone has relatively smaller height than the adult while the male and female are similar. Nearly all abalone have height smaller than 0.3, except two extreme values. We suggest to remove them out of the data.
+```{r Height Outlier cleaning}
+#remove the observation with extreme height value(>0.3) and plot afterwards
+abalone_cleaned<-abalone_cleaned%>%filter(Height<0.3)
+boxplot(abalone_cleaned$Height,xlab="Height",col = "Blue",
+        main="Box plot of Height(after cleaning)")
+```
+
+The next is to have a look at the distribution. The biological data is supposed to be approximately normal distributed. This is essential to be confirmed for the choice of distribution:
+```{r Size predictors Histogram}
+#see the distribution of the size predictors
+plot_histogram(abalone_cleaned[,2:4],geom_histogram_args = list("fill" = "blue",bins=30), nrow = 2L, ncol = 2L)
+```
+We see the "Diameter" and "Length" are very similar distributions with left skewed (negative distribution). There is a suspicion of Multicollinearity. We will explore it in the chapter "Correlation Exploration". Furthermore, the negative distribution could be from the influence of sex mixture, let's plot Diameter grouped with sex to have a check
+```{r}
+#let us see histogram 
+ggplot(data=abalone_cleaned, aes(x=Diameter, group=Sex, fill=Sex)) +
+    geom_density(adjust=1.5, alpha=.4)+ggtitle("Density of Diameter grouped by Sex")
+```
+We see the adult are still left skewed but infant is close to normal distribution. In addition we detect the male and female abalone has no big differences in Diameter. 
+
+
+### 2.1.3. Weight predictors
+
+We use the same way like the size to explore this category. However, different from size predictors, weight predictors have stronger logical relationships with each other:
+
+a. Whole weight > Shucked weight. The whole weight is the sum of shuck weight and weight of shell.
+
+b. Shucked weight >= Viscera weight. The meat includes the organic.
+
+c. Shell weight <= (Whole weight) - Shucked weight. Shell weight is dried weight, while the deduction is wet shell weight.
+
+Let us start with box plot to see if there are extreme outliers:
+
+```{r Weight outlier Detection}
+# detection of outliers from weight predictors
+boxplot(abalone_cleaned$Whole.weight,abalone_cleaned$Shucked.weight,
+        abalone_cleaned$Viscera.weight, abalone_cleaned$Shell.weight,col = "Blue")
+```
+
+We see no extreme outliers here. 
+
+Then we check the characteristic a with a scatter plot with ab-line:
+```{r Plot W.w. vs S.w.}
+# detection if whole weight > shucked weight with a line with slope=1
+qplot(abalone_cleaned$Whole.weight,abalone_cleaned$Shucked.weight, 
+      col=abalone_cleaned$Sex)+geom_abline(slope=1)
+```
+
+There are four points above the ab-line which means that these four observations have higher shucked weight than whole weight which is not logically possible. As we don't know which predictor has the wrong value, we will remove the observations:
+```{r Filter Whole weight vs Shucked weight}
+# keep only observations that has higher whole weight than shucked weight
+abalone_cleaned<-abalone_cleaned%>%filter(Whole.weight>Shucked.weight)
+#plot if outliers are removed
+qplot(abalone_cleaned$Whole.weight,abalone_cleaned$Shucked.weight,
+      col=abalone_cleaned$Sex)+geom_abline(slope=1)
+```
+
+Next, test characteristic b with the same way:
+```{r Filter of Shucked weight vs Viscera weight}
+#plot to see if all shucked weight>viscera weight
+qplot(abalone_cleaned$Shucked.weight,abalone_cleaned$Viscera.weight,
+      col=abalone_cleaned$Sex)+geom_abline(slope=1)
+#Remove the observation with shucked weight < viscera weight
+abalone_cleaned<-abalone_cleaned%>%filter(Shucked.weight>=Viscera.weight)
+```
+
+Finally with characteristic c:
+```{r Wet weight vs Dry shell weight}
+#detect if wet shell weight > dry shell weight
+Wet.Shell.Weight<-abalone_cleaned$Whole.weight-abalone_cleaned$Shucked.weight
+qplot(Wet.Shell.Weight,abalone_cleaned$Shell.weight,col=abalone_cleaned$Sex)+
+  geom_abline(slope=1)
+
+## filter out the observation which donot fulfill the requirement
+abalone_cleaned<-abalone_cleaned%>%filter((Whole.weight-Shucked.weight)>=Shell.weight)
+```
+We already cleaned out the observations with erroneous weight predictors. From the plots we can also see the distribution of sex. Let us summarize it in next chapter.
+
+### 2.1.4. Sex predictor
+
+As we already saw from the plots with sex grouped, therefore we won't plot them here again. We can summarize two insights from above:
+
+a. The infant have relatively smaller size and weight compare to adult. This is logical.
+
+b. Between male and female there is no significant differences. This is not supporting the predicting but adding instability of the result. Therefore, we can consider to reduce the level to infant and adult using binary variable.
+
+Let us first have a look if there is prevalence existing: 
+
+```{r Sex predictors to rings}
+# detection of prevalence 
+summary(abalone_cleaned$Sex)
+##plot the distribution of sex to rings
+ggplot(data=abalone_cleaned, aes(x=Rings, group=Sex, fill=Sex)) +
+    geom_density(adjust=1.5, alpha=.4)+ggtitle("Density of Rings grouped by Sex")
+```
+From the plot above, we see Infant has smaller median value of Rings than the adult while male and female are evenly distributed with the rings. Additionally there are no prevalence.
+
+
+### 2.2. Correlation exploration
+
+From the plots before, we noticed, that the predictors in same category are highly correlated. Therefore, the multicollinearity is suspected in the dataset. The multicollinearity occurs when two or more predictors are highly correlated. This can increase the standard error, unstable the regression coefficients and make the estimates sensitive to minor changes. In conclusion,we will detect if this problem exists and solve it.
+
+First let us have a look at the correlation matrix: 
+
+```{r Correlation of all predictors}
+#correlation coefficients between all predictors
+ggcorr(abalone_cleaned[,-1],label = TRUE, hjust=0.75,label_size = 3, label_round = 2) +
+  scale_alpha_manual(values = c("TRUE" = 0.25, "FALSE" = 0)) +
+  guides(color = FALSE, alpha = FALSE)
+```
+
+The visualization shows high correlation value between predictors(>0.8), while all predictors are moderate correlated with the output rings(between 0.4 and 0.7). Let us analyse it in detail:
+
+a. Length and Diameter are most correlated pair(0.99). Let us plot them to confirm:
+```{r Correlation of Diameter and Length}
+# Correlation coefficients between Length and Diameter including Rings
+pair<-abalone_cleaned%>%select(Sex,Diameter,Length,Rings)
+ggpairs(pair,columns = 2:4,ggplot2::aes(colour=Sex))
+```
+
+Except the truly high correlation between predictors, we also noticed again that female and male have no significant differences. Furthermore, comparing to infant, their Diameter and Length are less correlated with Rings. 
+
+In addition,one outlier could be visualized from the point plot between Length and Diameter. One observation has larger diameter but smaller length(Diameter>0.3 and Length<0.2). This could be a miss spelling. We can remove it:
+
+```{r Outliers Diameter and Length}
+# remove of odd value 
+abalone_cleaned<-abalone_cleaned%>%filter(!(Diameter>0.3&Length<0.2))
+qplot(Diameter,Length,data=abalone_cleaned,color=Sex)+geom_smooth(method="lm",col="Black")
+```
+
+b. The 4 weight predictors are highly correlated with each other(>0.95), lets plot them to confirm it:
+
+```{r Correlation between weight predictors}
+# correlation between weight predictors including Rings
+weight<-abalone_cleaned%>%select(Sex,Whole.weight,Shucked.weight,Viscera.weight,
+                                 Shell.weight,Rings)
+ggpairs(weight,columns = 2:6,ggplot2::aes(colour=Sex))
+```
+
+This is expected as the logical relationship between the weights. From the point plot we could confirm the correlation. Here we noticed again that adult has less correlation with rings than infant. Therefore, we can reduce the level of sex to infant and adult.
+
+c. Determine the possibility of multicollinearity by testing the VIF value and variable Variance
+
+```{r VIF and Variance}
+#VIF and variance of predictors
+vif(lm(Rings~.,data=abalone_cleaned))
+var(abalone_cleaned[,-1])
+```
+Except Height all the other continuous numerous predictors have VIF >10, while variance between predictors are <0.10. These all indicates the existence of multicollinearity in dataset. 
+
+To deal with this problem we have three options:removing some variables, converting variables into one, and, using principle component analysis(PCA). As the first two option is also a big topic and nearly each predictors are highly correlated with each other. We will choose the third option: PCA.
+
+In the end, we reduce the levels of sex as we concluded from the last chapters. One easier way which also support using regression models in next chapter, we reverse this predictor to binary variable: Infant(1) or Not Infant(0). We rename the predictor as "Infant":
+
+```{r Reduce level of Sex}
+# reduce levels of Sex to infant(1) and not infant(0)
+abalone_cleaned<-abalone_cleaned%>%mutate(Infant=ifelse(Sex=="I",1,0))%>%select(-Sex)
+```
+
+### 2.3. Summary of Data cleaning and exploration
+
+In summary, we did the following steps to prepared the data:
+
+a. removed two observations with Height=0.
+
+b. removed the three observations with impossible weights combination.
+
+c. removed one observation with odd Height and Diameter combination.
+
+d. found out the multicollinearity in the dataset and solve this problem with PCA.
+
+e. Renamed "Sex" to "Infant" and changed it to binary variable:1(infant) and 0(adult).
+
+Now we are ready to generise the strategy and start to modelling.
+
+
+### 2.4. Insights and modelling approach
+
+From the data exploration and cleaning step we get the insight that there is multicollinearity existing and decided to use PCA to eliminate the problem.Now we can set up the approaching strategy.
+
+### 2.4.1. General strategy from insights
+
+To avoid over-training we will firstly separate the dataset to taring and testing sets. Secondly, use PCA to solve the multicollinearity. Thirdly, we will first different regression model on the dataset(discussed from the chapter 1.2.2). In this part, we choose three different models: simple linear regression model "lm",more sophisticated models knn,randomForest. We will tune the parameters and the optimized parameter is automatically used to test the results. 
+
+### 2.4.2. Modelling
+
+This part includes train/test split, PCA process and implementation of models.
+
+### 2.3.2.1.Train and Test split
+
+We will separate the data for training and final testing in the ratio of 80 to 20. For the splitting there are following considered. There is no fix rules of how to split the data. Basically, with less portion of training data, the tuning variance is greater; with less portion of testing, the performance variance is greater. This dataset has around 4000 Observations, using 80 to 20 is on one hand does not take too long time of tuning the parameter while the performance is has certain stability. 
+```{r Spliting to train and test}
+#split the train(80%) and test set(20%) of the entire data
+index<-createDataPartition(abalone_cleaned$Rings,times = 1, p=0.2,list = FALSE)
+train_set<-abalone_cleaned[-index,]
+test_set<-abalone_cleaned[index,]
+```
+Furthermore, the cross validation with 5 folds is used instead of further splitting training dataset. The reason are the following: the cross validation is more sophisticated method and optimizing parameters. Additionally, in some algorithms such as Random Forest, the computation time with the 80% of 4000 observations is still acceptable with 5 folds.
+
+
+### 2.3.2.2.PCA on the train and test set
+
+Let us first do the PCA on train set and choose which how many components to use:
+```{r PCA on train set }
+# x_train as a train set without output column
+x_train<-train_set[,!names(train_set)%in%"Rings"]
+# pca the x_train with scaling the predictor first
+pca<-prcomp(x_train,scale. = T)
+##Examine how many pinciple components should be used for modelling
+summary(pca)
+qplot(1:ncol(x_train),pca$sdev)+geom_line()
+```
+
+The first 6 principle components are good to choose, as representing 99.774% of the variance.Then further transform the test set.
+
+```{r PCA on test set}
+#choose the representitive components
+x_train<-pca$x[,1:5]
+#transform the test set
+##x_test as test set with out output
+x_test<-test_set[,!names(test_set)%in%"Rings"]
+#stantardize the columns of test set and keep the first 6 columns
+x_test<-sweep(as.matrix(x_test),2,colMeans(x_test))%*%pca$rotation
+x_test<-x_test[,1:5]
+```
+
+### 2.4.2.3. Naive Modelling
+
+Using mean value as predicted value to give a RMSE: 
+```{r Naive RMSE}
+#mean value of Rings
+mean<-mean(train_set$Rings)
+#RMSE value if using average Rings
+naive_rmse<-RMSE(test_set$Rings,mean)
+naive_rmse
+```
+This should be the largest RMSE value.
+
+### 2.4.2.4. simple linear regression lm
+
+Use the lm to get the RMSE value, there is no tuned parameter here.
+```{r training with lm}
+# train on x_train, no parameter is tuned
+fit_lm<-train(x_train,train_set$Rings,method="lm",
+              trControl=trainControl(method="cv",number=5,p=0.9))
+## make the predition on x_test
+pred_lm<-predict(fit_lm,x_test)
+# geting the model result
+lm_rmse<-RMSE(test_set$Rings,pred_lm)
+lm_rmse
+```
+
+
+### 2.3.2.2. k-Nearest Neighbor(kNN)
+
+We set first the tuning of k between 1 and 30. 
+```{r training with kNN}
+#train with kNN and tune the k value between 1 to 15:
+fit_knn<-train(x_train,train_set$Rings,method="knn", tuneGrid=data.frame(k=seq(1,25,2)),
+               trControl=trainControl(method="cv",number=5,p=0.9))
+#the optimized k
+fit_knn$bestTune
+ggplot(fit_knn,highlight = TRUE)
+#make the prediction on test set
+pred_knn<-predict(fit_knn,x_test)
+#getting the result of the model
+knn_rmse<-RMSE(test_set$Rings,pred_knn)
+knn_rmse
+```
+
+### 2.3.2.3. GamLoess
+
+GamLoess is a method using a kernel. We train with tuning the parameter span.
+```{r training with GamLoess}
+#train with gamLoess with tuning the span
+fit_gam<-train(x_train,train_set$Rings,method="gamLoess",
+               tuneGrid=expand.grid(span=seq(0.15,0.65,len=10),degree=1),trControl=trainControl(method="cv",number=5,p=0.9))
+## with the optimized span value
+fit_gam
+ggplot(fit_gam,highlight = TRUE)
+## training on test set
+pred_gam<-predict(fit_gam,x_test)
+
+gam_rmse<-RMSE(test_set$Rings,pred_gam)
+gam_rmse
+
+```
+
+### 2.3.2.4. RandomForest
+
+Training with RandomForest with tuning of mtry. It might take several minutes.
+```{r training with RadndomForest}
+#train with random forest model with tuning the parameter mtry from 1 to 6
+fit_rf<-train(x_train,train_set$Rings,method="rf",importance=TRUE, 
+              tuneGrid=data.frame(mtry=c(1,6,2)),trControl=trainControl(method="cv",number=5,p=0.9))
+##the optimized mtry with plot and value
+ggplot(fit_rf,highlight = TRUE)
+fit_rf$bestTune
+##predict on test set
+pred_rf<-predict(fit_rf,x_test)
+#RMSE value with the optimized parameter
+rf_rmse<-RMSE(test_set$Rings,pred_rf)
+rf_rmse
+
+```
+
+## 3. Results
+
+```{r List of RMSE}
+# Listing the RMSE result of all model
+rmse_result<-t(tibble(naive_rmse,lm_rmse,knn_rmse,gam_rmse,rf_rmse))
+rmse_result
+```
+
+The final result is using the kNN model with the following RMSE and k value:
+```{r Final model}
+# final RMSE
+knn_rmse
+# optimized k value
+fit_knn$bestTune
+```
+
+
+## 4. Conclusion
+
+The project focused on data exploration and detected the outlier and odd values and furthermore the multicollinearity. Therefore the PCA is implemented on the predictors. For the modelling we implemented the some common used models. Furthermore, cross validation is used to avoid over-fitting and tuning of parameter to increase the accuracy of prediction.
+
+However, there are two main challenges of the project: to confirm the multicollinearity in dataset and how to solve with it. There are different parameters other than Correlation value need to be checked before confirming the multicollinearity, such as VIF and variable variance. There are also more possibilities to solve this problem. Which one is most suitable for the dataset is a lot to research. For this dataset, we chose PCA method. However, other method such as combine two variables into one using z score, could be also an option, or just remove some predictors. This could be the future work to implement those methods and comparing the result.
+
+
+
+## References
+
+1. https://rafalab.github.io/dsbook/
+2. https://www.theanalysisfactor.com/eight-ways-to-detect-multicollinearity/
+3. https://www.analyticsvidhya.com/blog/2016/03/pca-practical-guide-principal-component-analysis-python/
+
