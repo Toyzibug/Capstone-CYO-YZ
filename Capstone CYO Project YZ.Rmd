@@ -391,7 +391,7 @@ summary(pca)
 qplot(1:ncol(x_train),pca$sdev)+geom_line()
 ```
 
-The first 6 principle components are good to choose, as representing around 99% of the variance.Then further transform the test set with it.
+The first 5 principle components are good to choose, as representing around 99% of the variance.Then further transform the test set with it.
 ```{r PCA on test set}
 #choose the representitive components
 x_train<-pca$x[,1:5]
